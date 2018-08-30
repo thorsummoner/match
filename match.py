@@ -31,6 +31,9 @@ class _File(object):
         self.stat = self._stat = os.stat(self.file)
 
 
+    def __hash__(self):
+        return self.file.__hash__()
+
     @property
     def size(self):
         return self.stat.st_size
