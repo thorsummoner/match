@@ -6,8 +6,13 @@ import os
 import stat
 import filecmp
 import sys
+import logging
 
 import xxhash
+
+logging.basicConfig(level=logging.INFO)
+
+LOGGER = logging.getLogger(os.path.basename(__file__))
 
 ARGP = argparse.ArgumentParser()
 ARGP.add_argument('files', nargs='*', help='list of files to match')
