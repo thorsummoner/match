@@ -5,11 +5,12 @@ import itertools
 import os
 import stat
 import filecmp
+import sys
 
 import xxhash
 
 ARGP = argparse.ArgumentParser()
-ARGP.add_argument('files', nargs='+', help='list of files to match')
+ARGP.add_argument('files', nargs='*', help='list of files to match')
 
 
 def _hash(_file, _hash):
@@ -58,6 +59,9 @@ def _pairs(files):
 def main(argp=None):
     if argp is None:
         argp = ARGP.parse_args()
+        if not argp.files:
+            argp.files = [line.strip() for line in sys.stdin]
+
 
 
     pairs = _pairs(argp.files)
