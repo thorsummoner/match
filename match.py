@@ -28,13 +28,11 @@ def _hash(_file, _hash):
 class _File(object):
     def __init__(self, _file):
         self.file = _file
+        self.stat = self._stat = os.stat(self.file)
 
-    _stat = None
-    @property
-    def stat(self):
-        if self._stat is None:
-            self._stat = os.stat(self.file)
-        return self._stat
+
+    def __hash__(self):
+        return self.file.__hash__()
 
     @property
     def size(self):
@@ -57,7 +55,6 @@ class _File(object):
         return filecmp.cmp(self.file, other.file, shallow=False)
 
 def _pairs(files):
-    files = (_File(i) for i in files)
     for filea, fileb in itertools.combinations(files, 2):
         yield (filea, fileb,)
 
@@ -67,9 +64,22 @@ def main(argp=None):
         if not argp.files:
             argp.files = [line.strip() for line in sys.stdin]
 
+    # collect all files that exist
+    files_all = list()
+    for file_ in argp.files:
+        try:
+            file_ = _File(file_)
+        except OSError as err:
+            LOGGER.error(err)
+            continue
+        files_all.append(file_)
 
+    files = set(files_all)
+    if len(files) < len(files_all):
+        LOGGER.warning('Not all files names are unique')
 
-    pairs = _pairs(argp.files)
+    # pair them together
+    pairs = _pairs(files)
     for pair in pairs:
         if pair[0] != pair[1]:
             continue
