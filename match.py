@@ -28,13 +28,8 @@ def _hash(_file, _hash):
 class _File(object):
     def __init__(self, _file):
         self.file = _file
+        self.stat = self._stat = os.stat(self.file)
 
-    _stat = None
-    @property
-    def stat(self):
-        if self._stat is None:
-            self._stat = os.stat(self.file)
-        return self._stat
 
     @property
     def size(self):
