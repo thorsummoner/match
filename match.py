@@ -16,6 +16,8 @@ LOGGER = logging.getLogger(os.path.basename(__file__))
 
 ARGP = argparse.ArgumentParser()
 ARGP.add_argument('files', nargs='*', help='list of files to match')
+ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use specified delimiter (default Tab)')
+ARGP.add_argument('-z', '-N', '-0', action='store_const', const='\0', dest='delimiter', help='Use Null Delimiter')
 
 
 def _hash(_file, _hash):
@@ -83,7 +85,7 @@ def main(argp=None):
     for pair in pairs:
         if pair[0] != pair[1]:
             continue
-        print('{}\t{}'.format(pair[0].file, pair[1].file))
+        print('{}{}{}'.format(pair[0].file, argp.delimiter, pair[1].file))
 
 if __name__ == '__main__':
     main()
