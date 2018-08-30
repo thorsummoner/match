@@ -7,6 +7,7 @@ import stat
 import filecmp
 import sys
 import logging
+import collections
 
 import xxhash
 
@@ -19,12 +20,47 @@ ARGP.add_argument('files', nargs='*', help='list of files to match')
 ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use specified delimiter (default Tab)')
 ARGP.add_argument('-z', '-N', '-0', action='store_const', const='\0', dest='delimiter', help='Use Null Delimiter')
 
+_Step = collections.namedtuple('Step', ['iteration', 'digest', 'stepfunc', 'final'])
+
+def exponential(initial=1):
+    yield initial
+    while True:
+        initial*=initial
+        yield initial
+
 
 def _hash(_file, _hash):
+   """ Hash whole file up front
+   """
+   with open(_file, 'rb') as fileh:
+       for chunk in iter(lambda: fileh.read(4096), b''):
+           _hash.update(chunk)
+   return _hash.hexdigest()
+
+
+def _stephash(_file, _hash, stepfunc=None):
+    """ Hash file in 4096 blocks according to the stepping function
+        (default exponentional stops, file hex at [1, 2, 4, 8 ...] * 4096 bytes)
+    """
+    if stepfunc is None:
+        stepfunc = exponential
+
+    stepping = stepfunc()
+
+    step = next(stepping)
     with open(_file, 'rb') as fileh:
+        iteration = 0
         for chunk in iter(lambda: fileh.read(4096), b''):
             _hash.update(chunk)
-    return _hash.hexdigest()
+            iteration += 1
+            if iteration >= step:
+                yield _Step(step, _hash.digest(), stepfunc, 0)
+                try:
+                    step = next(stepping)
+                except StopIteration as err:
+                    raise SystemError(err)
+
+    yield _Step(step, _hash.hexdigest(), stepfunc, 1)
 
 
 class _File(object):
@@ -40,15 +76,59 @@ class _File(object):
     def size(self):
         return self.stat.st_size
 
+
+    _stepxxhash_map = None
+    @property
+    def _stepxxhash(self):
+        if self._stepxxhash_map is None:
+            _map = list()
+            for step in _stephash(self.file, xxhash.xxh64()):
+                _map.append(step)
+                yield step
+
+            self._stepxxhash_map = _map
+            self._xxhashhex = step.digest
+            return
+        yield from self._stepxxhash_map
+
+
     _xxhashhex = None
     @property
     def _xxhash(self):
         if self._xxhashhex is None:
+            LOGGER.warning('File was hashed all at once!, file size of %s', self.size)
             self._xxhashhex = _hash(self.file, xxhash.xxh64())
         return self._xxhashhex
 
     def __eq__(self, other):
         if self.size != other.size:
+            return False
+
+        local_stop, other_stop = False, False
+        local_hashsteps = self._stepxxhash
+        other_hashsteps = other._stepxxhash
+        try:
+            while True:
+                try:
+                    local_step = next(local_hashsteps)
+                except StopIteration:
+                    local_stop = True
+                try:
+                    other_step = next(other_hashsteps)
+                except StopIteration:
+                    other_stop = True
+
+                assert local_stop == other_stop, "File sizes differ"
+                assert local_step.stepfunc == other_step.stepfunc, "step function differ"
+                assert local_step.iteration == other_step.iteration, "iteration count differ"
+
+                if local_stop:
+                    break
+        except AssertionError as err:
+            LOGGER.error('Files failed assertion, %s and %s', self.file, other.file)
+            raise err
+
+        if local_step.digest != other_step.digest:
             return False
 
         if self._xxhash != other._xxhash:
