@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(os.path.basename(__file__))
 ARGP = argparse.ArgumentParser()
 ARGP.add_argument('files', nargs='*', help='list of files to match')
 ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use specified delimiter (default Tab)')
-ARGP.add_argument('-z', '-N', '-0', action='store_const', const='\0', dest='delimiter', help='Use Null Delimiter')
+ARGP.add_argument('-z', '-N', '-0', action='store_const', const=b'\0', dest='delimiter', help='Use Null Delimiter')
 ARGP.add_argument('--delete-prefix', help='Allow delting files under this prefix')
 
 _Step = collections.namedtuple('Step', ['iteration', 'digest', 'stepfunc', 'final'])
@@ -67,6 +67,8 @@ def _stephash(_file, _hash, stepfunc=None):
 class _File(object):
     def __init__(self, _file):
         self.file = _file
+        if b'\0' in self.file:
+            import pprint; pprint.pprint(self.file)
         self.stat = self._stat = os.stat(self.file)
 
 
@@ -145,7 +147,10 @@ def main(argp=None):
     if argp is None:
         argp = ARGP.parse_args()
         if not argp.files:
-            argp.files = [line.strip() for line in sys.stdin.buffer]
+            if argp.delimiter:
+                argp.files = sys.stdin.buffer.read().split(argp.delimiter)
+            else:
+                argp.files = [line.strip() for line in sys.stdin.buffer]
 
     # collect all files that exist
     files_all = list()
@@ -162,11 +167,15 @@ def main(argp=None):
         LOGGER.warning('Not all files names are unique')
 
     # pair them together
-    pairs = _pairs(files)
-    for pair in pairs:
+    for pair in _pairs(files):
         if pair[0] != pair[1]:
             continue
-        print('{}{}{}'.format(pair[0].file, argp.delimiter, pair[1].file))
+        sys.stdout.buffer.write(
+            pair[0].file
+            + b'\0'
+            + pair[1].file
+            + b'\0\n'
+        )
 
 if __name__ == '__main__':
     main()
