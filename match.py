@@ -144,7 +144,7 @@ def main(argp=None):
     if argp is None:
         argp = ARGP.parse_args()
         if not argp.files:
-            argp.files = [line.strip() for line in sys.stdin]
+            argp.files = [line.strip() for line in sys.stdin.buffer]
 
     # collect all files that exist
     files_all = list()
