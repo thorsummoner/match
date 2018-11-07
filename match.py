@@ -9,6 +9,8 @@ import sys
 import logging
 import collections
 import pprint
+import multiprocessing
+import signal
 
 import xxhash
 
@@ -23,11 +25,12 @@ ARGP.add_argument('-z', '-N', '-0', action='store_const', const=b'\0', dest='del
 ARGP.add_argument('--delete-prefix', help='Allow delting files under this prefix')
 ARGP.add_argument('--delete', action='store_true', help='Unlink files as printed by --delete-prefix')
 ARGP.add_argument('--name-match', '-n', action='store_true', help='Require file name to match')
+ARGP.add_argument('--multiprocessing', '-j', type=int, help='Multiprocessing pool size')
 ARGP_OUTPUT = ARGP.add_mutually_exclusive_group()
 ARGP_OUTPUT.add_argument('--l0r0n', dest='output_mode', action='store_const', const='l0r0n')
 ARGP_OUTPUT.add_argument('--pprint', dest='output_mode', action='store_const', const='pprint')
 
-_Step = collections.namedtuple('Step', ['iteration', 'digest', 'stepfunc', 'final'])
+_Step = collections.namedtuple('_Step', ['iteration', 'digest', 'stepfunc', 'final'])
 
 def exponential(initial=1):
     yield initial
@@ -157,11 +160,58 @@ def _filter(pairs, name_match=None):
         if name_match and pair[0].name != pair[1].name: continue
         yield pair
 
-def _match(pairs):
-    for pair in pairs:
-        if pair[0] != pair[1]:
-            continue
-        yield pair
+def _eq(pair):
+    equal = None
+    try:
+        equal = pair[0] == pair[1]
+    except FileNotFoundError:
+        pass
+    return (pair, equal,)
+
+def _init_worker():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+def _matches(pairs, pool=None):
+    if pool is None:
+        for pair in pairs:
+            if not _eq(pair):
+                continue
+            yield pair
+
+        return
+
+    try:
+        with pool as pool:
+            for result in pool.imap_unordered(_eq, pairs):
+                if not result[1]:
+                    continue
+                yield result[0]
+
+            return
+        pass
+    except KeyboardInterrupt as err:
+        pool.terminate()
+        pool.close()
+        raise SystemExit(err)
+
+def _unlink_if_prefix_partial(delete_prefix, delete, left, right):
+    if left.startswith(delete_prefix) and not right.startswith(delete_prefix):
+        sys.stdout.buffer.write(left + b'\0')
+        if delete:
+            try:
+                os.unlink(left)
+            except FileNotFoundError as err:
+                LOGGER.info(err)
+
+        return True
+
+def _unlink_if_prefix(delete_prefix, delete, match):
+    flush = False
+    flush = flush or _unlink_if_prefix_partial(delete_prefix, delete, match[0].file, match[1].file)
+    flush = flush or _unlink_if_prefix_partial(delete_prefix, delete, match[1].file, match[0].file)
+    if flush:
+        sys.stdout.buffer.flush()
+
 
 def main(argp=None):
     if argp is None:
@@ -192,28 +242,19 @@ def main(argp=None):
     LOGGER.info('files unique: %s', len(files))
 
     # pair them together
-    matches = _match(_filter(
-        _pairs(files),
-        name_match=argp.name_match
-    ))
+    matches = _matches(
+        _filter(
+            _pairs(files),
+            name_match=argp.name_match
+        ),
+        pool=(multiprocessing.Pool(argp.multiprocessing, _init_worker) if argp.multiprocessing else None),
+    )
     if argp.delete_prefix:
         argp.delete_prefix = argp.delete_prefix.encode('utf-8')
 
     for match in matches:
         if argp.delete_prefix:
-            flush = False
-            if match[0].file.startswith(argp.delete_prefix) and not match[1].file.startswith(argp.delete_prefix):
-                sys.stdout.buffer.write(match[0].file + b'\0')
-                flush = True
-                if argp.delete:
-                    pathlib.Path.unlink(match[0].file)
-            if match[1].file.startswith(argp.delete_prefix) and not match[0].file.startswith(argp.delete_prefix):
-                sys.stdout.buffer.write(match[1].file + b'\0')
-                flush = True
-                if argp.delete:
-                    pathlib.Path.unlink(match[1].file)
-            if flush:
-                sys.stdout.buffer.flush()
+            _unlink_if_prefix(argp.delete_prefix, argp.delete, match)
             continue
 
         if not argp.output_mode or argp.output_mode == 'pprint':
