@@ -21,6 +21,7 @@ ARGP.add_argument('files', nargs='*', help='list of files to match')
 ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use specified delimiter (default Tab)')
 ARGP.add_argument('-z', '-N', '-0', action='store_const', const=b'\0', dest='delimiter', help='Use Null Delimiter')
 ARGP.add_argument('--delete-prefix', help='Allow delting files under this prefix')
+ARGP.add_argument('--delete', action='store_true', help='Unlink files as printed by --delete-prefix')
 ARGP.add_argument('--name-match', '-n', action='store_true', help='Require file name to match')
 ARGP_OUTPUT = ARGP.add_mutually_exclusive_group()
 ARGP_OUTPUT.add_argument('--l0r0n', dest='output_mode', action='store_const', const='l0r0n')
@@ -195,8 +196,26 @@ def main(argp=None):
         _pairs(files),
         name_match=argp.name_match
     ))
+    if argp.delete_prefix:
+        argp.delete_prefix = argp.delete_prefix.encode('utf-8')
 
     for match in matches:
+        if argp.delete_prefix:
+            flush = False
+            if match[0].file.startswith(argp.delete_prefix):
+                sys.stdout.buffer.write(match[0].file + b'\0')
+                flush = True
+                if argp.delete:
+                    pathlib.Path.unlink(match[0].file)
+            if match[1].file.startswith(argp.delete_prefix):
+                sys.stdout.buffer.write(match[1].file + b'\0')
+                flush = True
+                if argp.delete:
+                    pathlib.Path.unlink(match[1].file)
+            if flush:
+                sys.stdout.buffer.flush()
+            continue
+
         if not argp.output_mode or argp.output_mode == 'pprint':
             pprint.pprint((match[0].file, match[1].file, ), width=len(pprint.pformat(match[0].file)))
         if argp.output_mode == 'l0r0n':
