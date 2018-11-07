@@ -20,6 +20,7 @@ ARGP.add_argument('files', nargs='*', help='list of files to match')
 ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use specified delimiter (default Tab)')
 ARGP.add_argument('-z', '-N', '-0', action='store_const', const=b'\0', dest='delimiter', help='Use Null Delimiter')
 ARGP.add_argument('--delete-prefix', help='Allow delting files under this prefix')
+ARGP.add_argument('--name-match', '-n', action='store_true', help='Require file name to match')
 
 _Step = collections.namedtuple('Step', ['iteration', 'digest', 'stepfunc', 'final'])
 
@@ -79,6 +80,9 @@ class _File(object):
     def size(self):
         return self.stat.st_size
 
+    @property
+    def name(self):
+        return os.path.basename(self.file)
 
     _stepxxhash_map = None
     @property
@@ -143,6 +147,11 @@ def _pairs(files):
     for filea, fileb in itertools.combinations(files, 2):
         yield (filea, fileb,)
 
+def _filter(pairs, name_match=None):
+    for pair in pairs:
+        if name_match and pair[0].name != pair[1].name: continue
+        yield pair
+
 def main(argp=None):
     if argp is None:
         argp = ARGP.parse_args()
@@ -172,7 +181,7 @@ def main(argp=None):
     LOGGER.info('files unique: %s', len(files))
 
     # pair them together
-    for pair in _pairs(files):
+    for pair in _filter(_pairs(files), name_match=argp.name_match):
         if pair[0] != pair[1]:
             continue
         sys.stdout.buffer.write(
