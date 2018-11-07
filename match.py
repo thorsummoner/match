@@ -8,6 +8,7 @@ import filecmp
 import sys
 import logging
 import collections
+import pprint
 
 import xxhash
 
@@ -21,6 +22,9 @@ ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use speci
 ARGP.add_argument('-z', '-N', '-0', action='store_const', const=b'\0', dest='delimiter', help='Use Null Delimiter')
 ARGP.add_argument('--delete-prefix', help='Allow delting files under this prefix')
 ARGP.add_argument('--name-match', '-n', action='store_true', help='Require file name to match')
+ARGP_OUTPUT = ARGP.add_mutually_exclusive_group()
+ARGP_OUTPUT.add_argument('--l0r0n', dest='output_mode', action='store_const', const='l0r0n')
+ARGP_OUTPUT.add_argument('--pprint', dest='output_mode', action='store_const', const='pprint')
 
 _Step = collections.namedtuple('Step', ['iteration', 'digest', 'stepfunc', 'final'])
 
@@ -152,6 +156,12 @@ def _filter(pairs, name_match=None):
         if name_match and pair[0].name != pair[1].name: continue
         yield pair
 
+def _match(pairs):
+    for pair in pairs:
+        if pair[0] != pair[1]:
+            continue
+        yield pair
+
 def main(argp=None):
     if argp is None:
         argp = ARGP.parse_args()
@@ -181,15 +191,21 @@ def main(argp=None):
     LOGGER.info('files unique: %s', len(files))
 
     # pair them together
-    for pair in _filter(_pairs(files), name_match=argp.name_match):
-        if pair[0] != pair[1]:
-            continue
-        sys.stdout.buffer.write(
-            pair[0].file
-            + b'\0'
-            + pair[1].file
-            + b'\0\n'
-        )
+    matches = _match(_filter(
+        _pairs(files),
+        name_match=argp.name_match
+    ))
+
+    for match in matches:
+        if not argp.output_mode or argp.output_mode == 'pprint':
+            pprint.pprint((match[0].file, match[1].file, ), width=len(pprint.pformat(match[0].file)))
+        if argp.output_mode == 'l0r0n':
+            sys.stdout.buffer.write(
+                match[0].file
+                + b'\0'
+                + match[1].file
+                + b'\0\n'
+            )
 
 if __name__ == '__main__':
     main()
