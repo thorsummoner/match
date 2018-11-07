@@ -152,6 +152,7 @@ def main(argp=None):
             else:
                 argp.files = [line.strip() for line in sys.stdin.buffer]
 
+    LOGGER.info('files specified: %s', len(argp.files))
     # collect all files that exist
     files_all = list()
     for file_ in argp.files:
@@ -162,9 +163,13 @@ def main(argp=None):
             continue
         files_all.append(file_)
 
+    LOGGER.info('files exist: %s', len(files_all))
+
     files = set(files_all)
     if len(files) < len(files_all):
         LOGGER.warning('Not all files names are unique')
+
+    LOGGER.info('files unique: %s', len(files))
 
     # pair them together
     for pair in _pairs(files):
