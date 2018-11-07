@@ -19,6 +19,7 @@ ARGP = argparse.ArgumentParser()
 ARGP.add_argument('files', nargs='*', help='list of files to match')
 ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use specified delimiter (default Tab)')
 ARGP.add_argument('-z', '-N', '-0', action='store_const', const='\0', dest='delimiter', help='Use Null Delimiter')
+ARGP.add_argument('--delete-prefix', help='Allow delting files under this prefix')
 
 _Step = collections.namedtuple('Step', ['iteration', 'digest', 'stepfunc', 'final'])
 
