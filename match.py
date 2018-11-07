@@ -202,12 +202,12 @@ def main(argp=None):
     for match in matches:
         if argp.delete_prefix:
             flush = False
-            if match[0].file.startswith(argp.delete_prefix):
+            if match[0].file.startswith(argp.delete_prefix) and not match[1].file.startswith(argp.delete_prefix):
                 sys.stdout.buffer.write(match[0].file + b'\0')
                 flush = True
                 if argp.delete:
                     pathlib.Path.unlink(match[0].file)
-            if match[1].file.startswith(argp.delete_prefix):
+            if match[1].file.startswith(argp.delete_prefix) and not match[0].file.startswith(argp.delete_prefix):
                 sys.stdout.buffer.write(match[1].file + b'\0')
                 flush = True
                 if argp.delete:
