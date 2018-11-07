@@ -8,6 +8,7 @@ import filecmp
 import sys
 import logging
 import collections
+import pprint
 
 import xxhash
 
@@ -18,7 +19,13 @@ LOGGER = logging.getLogger(os.path.basename(__file__))
 ARGP = argparse.ArgumentParser()
 ARGP.add_argument('files', nargs='*', help='list of files to match')
 ARGP.add_argument('--delimiter', dest='delimiter', default='\t', help='Use specified delimiter (default Tab)')
-ARGP.add_argument('-z', '-N', '-0', action='store_const', const='\0', dest='delimiter', help='Use Null Delimiter')
+ARGP.add_argument('-z', '-N', '-0', action='store_const', const=b'\0', dest='delimiter', help='Use Null Delimiter')
+ARGP.add_argument('--delete-prefix', help='Allow delting files under this prefix')
+ARGP.add_argument('--delete', action='store_true', help='Unlink files as printed by --delete-prefix')
+ARGP.add_argument('--name-match', '-n', action='store_true', help='Require file name to match')
+ARGP_OUTPUT = ARGP.add_mutually_exclusive_group()
+ARGP_OUTPUT.add_argument('--l0r0n', dest='output_mode', action='store_const', const='l0r0n')
+ARGP_OUTPUT.add_argument('--pprint', dest='output_mode', action='store_const', const='pprint')
 
 _Step = collections.namedtuple('Step', ['iteration', 'digest', 'stepfunc', 'final'])
 
@@ -66,6 +73,8 @@ def _stephash(_file, _hash, stepfunc=None):
 class _File(object):
     def __init__(self, _file):
         self.file = _file
+        if b'\0' in self.file:
+            import pprint; pprint.pprint(self.file)
         self.stat = self._stat = os.stat(self.file)
 
 
@@ -76,6 +85,9 @@ class _File(object):
     def size(self):
         return self.stat.st_size
 
+    @property
+    def name(self):
+        return os.path.basename(self.file)
 
     _stepxxhash_map = None
     @property
@@ -140,12 +152,27 @@ def _pairs(files):
     for filea, fileb in itertools.combinations(files, 2):
         yield (filea, fileb,)
 
+def _filter(pairs, name_match=None):
+    for pair in pairs:
+        if name_match and pair[0].name != pair[1].name: continue
+        yield pair
+
+def _match(pairs):
+    for pair in pairs:
+        if pair[0] != pair[1]:
+            continue
+        yield pair
+
 def main(argp=None):
     if argp is None:
         argp = ARGP.parse_args()
         if not argp.files:
-            argp.files = [line.strip() for line in sys.stdin.buffer]
+            if argp.delimiter:
+                argp.files = sys.stdin.buffer.read().split(argp.delimiter)
+            else:
+                argp.files = [line.strip() for line in sys.stdin.buffer]
 
+    LOGGER.info('files specified: %s', len(argp.files))
     # collect all files that exist
     files_all = list()
     for file_ in argp.files:
@@ -156,16 +183,48 @@ def main(argp=None):
             continue
         files_all.append(file_)
 
+    LOGGER.info('files exist: %s', len(files_all))
+
     files = set(files_all)
     if len(files) < len(files_all):
         LOGGER.warning('Not all files names are unique')
 
+    LOGGER.info('files unique: %s', len(files))
+
     # pair them together
-    pairs = _pairs(files)
-    for pair in pairs:
-        if pair[0] != pair[1]:
+    matches = _match(_filter(
+        _pairs(files),
+        name_match=argp.name_match
+    ))
+    if argp.delete_prefix:
+        argp.delete_prefix = argp.delete_prefix.encode('utf-8')
+
+    for match in matches:
+        if argp.delete_prefix:
+            flush = False
+            if match[0].file.startswith(argp.delete_prefix):
+                sys.stdout.buffer.write(match[0].file + b'\0')
+                flush = True
+                if argp.delete:
+                    pathlib.Path.unlink(match[0].file)
+            if match[1].file.startswith(argp.delete_prefix):
+                sys.stdout.buffer.write(match[1].file + b'\0')
+                flush = True
+                if argp.delete:
+                    pathlib.Path.unlink(match[1].file)
+            if flush:
+                sys.stdout.buffer.flush()
             continue
-        print('{}{}{}'.format(pair[0].file, argp.delimiter, pair[1].file))
+
+        if not argp.output_mode or argp.output_mode == 'pprint':
+            pprint.pprint((match[0].file, match[1].file, ), width=len(pprint.pformat(match[0].file)))
+        if argp.output_mode == 'l0r0n':
+            sys.stdout.buffer.write(
+                match[0].file
+                + b'\0'
+                + match[1].file
+                + b'\0\n'
+            )
 
 if __name__ == '__main__':
     main()
